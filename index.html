@@ -41,73 +41,63 @@
 </div>
 
 <script>
+    // Set default date to today
     document.getElementById('datePicker').valueAsDate = new Date();
 
     async function fetchMovies() {
         const res = document.getElementById('result');
-        const dateVal = document.getElementById('datePicker').value;
+        const dateVal = document.getElementById('datePicker').value; // Format: YYYY-MM-DD
         const startTime = document.getElementById('t1').value;
         const endTime = document.getElementById('t2').value;
 
-        res.innerHTML = "Rolling the dice...";
+        res.innerHTML = "Accessing live listings...";
 
         try {
-            // We use entertainment.ie as a source because their HTML is much cleaner for scraping
-            const targetUrl = 'https://entertainment.ie/cinema/cinema-listings/antrim/omniplex-lisburn/';
+            // 1. We fetch from their data endpoint rather than the visual HTML page
+            // The ID 348 is the specific ID for Omniplex Lisburn
+            const targetUrl = `https://entertainment.ie/app/objects/cinema/listings/?cinema_id=348&date=${dateVal}`;
             const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
             
             const response = await fetch(proxyUrl);
-            const html = await response.text();
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
+            if (!response.ok) throw new Error('Network error');
             
-            // 1. Format our target date to match their format (e.g., "Tue 14 Apr")
-            const dateObj = new Date(dateVal);
-            const targetDayLabel = dateObj.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-            // Remove the period from the month if it exists (e.g. "Apr." -> "Apr")
-            const cleanTarget = targetDayLabel.replace('.', '');
-
+            const data = await response.json();
+            
+            // 2. The data returns an object where movies are in the 'success' or 'listings' property
+            // Based on their API structure:
+            const movies = data.listings || [];
             let pool = [];
 
-            // 2. Find all film containers
-            const films = doc.querySelectorAll('.cinema-listings__item');
+            movies.forEach(movie => {
+                const title = movie.title;
+                let validTimes = [];
 
-            films.forEach(film => {
-                const title = film.querySelector('.cinema-listings__film-title')?.innerText.trim();
-                
-                // 3. Find the specific "Day" block inside this film's listing
-                const dayBlocks = film.querySelectorAll('.cinema-listings__day');
-                
-                dayBlocks.forEach(block => {
-                    const blockDate = block.querySelector('.cinema-listings__day-name')?.innerText.trim();
-                    
-                    // If this block matches our selected date (e.g. "Tue 14 Apr")
-                    if (blockDate && blockDate.includes(cleanTarget)) {
-                        let times = [];
-                        const timeLinks = block.querySelectorAll('.cinema-listings__showtime');
-                        
-                        timeLinks.forEach(t => {
-                            const timeText = t.innerText.trim(); // e.g. "19:30"
-                            if (timeText >= startTime && timeText <= endTime) {
-                                times.push(timeText);
-                            }
-                        });
-
-                        if (times.length > 0) {
-                            pool.push({ title, times });
+                // 3. Filter times based on user input
+                if (movie.times && Array.isArray(movie.times)) {
+                    movie.times.forEach(slot => {
+                        const time = slot.time; // Format "HH:mm"
+                        if (time >= startTime && time <= endTime) {
+                            validTimes.push(time);
                         }
-                    }
-                });
+                    });
+                }
+
+                if (validTimes.length > 0) {
+                    pool.push({
+                        title: title,
+                        times: validTimes
+                    });
+                }
             });
 
-            // 4. Display Results
+            // 4. Handle Result
             if (pool.length === 0) {
-                res.innerHTML = `No movies found for ${cleanTarget} between ${startTime} and ${endTime}.`;
+                res.innerHTML = `No movies found for this time range on ${dateVal}.`;
             } else {
                 const choice = pool[Math.floor(Math.random() * pool.length)];
                 res.innerHTML = `
                     <div class="movie-card">
-                        <small style="color:#aaa">RANDOM SELECTION FOR ${cleanTarget}:</small>
+                        <small style="color:#aaa">RANDOM SELECTION:</small>
                         <div style="font-size:1.2rem; font-weight:bold; margin: 5px 0;">${choice.title}</div>
                         <div>${choice.times.map(t => `<span class="time-tag">${t}</span>`).join('')}</div>
                     </div>
@@ -115,11 +105,10 @@
             }
 
         } catch (err) {
-            res.innerHTML = "Connection error. Please try again in a moment.";
-            console.error(err);
+            res.innerHTML = "Error: Could not retrieve data. The cinema API might be down.";
+            console.error("Scraping Error:", err);
         }
     }
-</script>
 
 </body>
 </html>
