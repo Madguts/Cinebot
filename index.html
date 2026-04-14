@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lisburn Cinema Picker</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; background: #000; color: #fff; display: flex; justify-content: center; padding: 20px; }
+        .container { background: #1a1a1a; padding: 25px; border-radius: 15px; width: 100%; max-width: 400px; border: 1px solid #333; }
+        h2 { color: #e50914; margin-top: 0; text-align: center; }
+        label { display: block; margin: 10px 0 5px; font-size: 0.8rem; color: #aaa; }
+        input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #222; color: #fff; box-sizing: border-box; margin-bottom: 10px; }
+        button { width: 100%; padding: 15px; background: #e50914; color: #fff; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        #result { margin-top: 20px; border-top: 1px solid #333; padding-top: 20px; }
+        .movie-card { background: #252525; padding: 15px; border-radius: 10px; border-left: 4px solid #e50914; }
+        .time-tag { display: inline-block; background: #444; padding: 5px 10px; margin: 4px; border-radius: 5px; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Lisburn Picker</h2>
+    
+    <label>Date:</label>
+    <input type="date" id="datePicker">
+    
+    <div style="display:flex; gap:10px;">
+        <div style="flex:1">
+            <label>From:</label>
+            <input type="time" id="t1" value="17:00">
+        </div>
+        <div style="flex:1">
+            <label>Until:</label>
+            <input type="time" id="t2" value="22:00">
+        </div>
+    </div>
+    
+    <button onclick="fetchMovies()">Roll the Dice</button>
+
+    <div id="result"></div>
+</div>
+
+<script>
+    // Set default date to today
+    document.getElementById('datePicker').valueAsDate = new Date();
+
+    async function fetchMovies() {
+        const res = document.getElementById('result');
+        const dateVal = document.getElementById('datePicker').value;
+        const startTime = document.getElementById('t1').value;
+        const endTime = document.getElementById('t2').value;
+
+        res.innerHTML = "Checking listings...";
+
+        try {
+            // Updated Proxy to avoid the Content-Length error
+            const targetUrl = 'https://www.omniplexcinemas.co.uk/cinema/lisburn';
+            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+            
+            const response = await fetch(proxyUrl);
+            if (!response.ok) throw new Error('Network error');
+            const html = await response.text();
+            
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            // Format selected day to match Omniplex (e.g. "Friday")
+            const selectedDay = new Date(dateVal).toLocaleDateString('en-GB', { weekday: 'long' });
+            
+            const movies = doc.querySelectorAll('.film-list__item');
+            let pool = [];
+
+            movies.forEach(m => {
+                const title = m.querySelector('.film-list__title')?.innerText.trim();
+                
+                // Find the section for our specific day
+                const daySections = m.querySelectorAll('.film-list__showtimes-day');
+                daySections.forEach(section => {
+                    const dayName = section.querySelector('.film-list__day-name')?.innerText.trim() || "";
+                    
+                    if (dayName.toLowerCase().includes(selectedDay.toLowerCase())) {
+                        let times = [];
+                        section.querySelectorAll('.film-list__session-time').forEach(t => {
+                            const val = t.innerText.trim();
+                            if (val >= startTime && val <= endTime) times.push(val);
+                        });
+
+                        if (times.length > 0) {
+                            pool.push({ title, times });
+                        }
+                    }
+                });
+            });
+
+            if (pool.length === 0) {
+                res.innerHTML = "No movies found for that time/date.";
+            } else {
+                const choice = pool[Math.floor(Math.random() * pool.length)];
+                res.innerHTML = `
+                    <div class="movie-card">
+                        <small style="color:#aaa">RANDOM SELECTION:</small>
+                        <div style="font-size:1.2rem; font-weight:bold; margin: 5px 0;">${choice.title}</div>
+                        <div>${choice.times.map(t => `<span class="time-tag">${t}</span>`).join('')}</div>
+                    </div>
+                `;
+            }
+
+        } catch (err) {
+            res.innerHTML = "Error fetching data. Omniplex might be blocking the request.";
+            console.error(err);
+        }
+    }
+</script>
+
+</body>
+</html>
