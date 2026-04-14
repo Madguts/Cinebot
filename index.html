@@ -49,50 +49,47 @@
         const startTime = document.getElementById('t1').value;
         const endTime = document.getElementById('t2').value;
 
-        res.innerHTML = "Checking listings...";
+        res.innerHTML = "Rolling the dice...";
 
         try {
-            // Using a more reliable target URL for the Lisburn cinema
-            const targetUrl = 'https://www.omniplexcinemas.co.uk/cinema/lisburn';
+            // We use entertainment.ie as a source because their HTML is much cleaner for scraping
+            const targetUrl = 'https://entertainment.ie/cinema/cinema-listings/antrim/omniplex-lisburn/';
             const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
             
             const response = await fetch(proxyUrl);
-            if (!response.ok) throw new Error('Network error');
             const html = await response.text();
-            
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             
-            // Omniplex often uses "Friday 14th April" style or just "Friday"
+            // 1. Format our target date to match their format (e.g., "Tue 14 Apr")
             const dateObj = new Date(dateVal);
-            const selectedDayName = dateObj.toLocaleDateString('en-GB', { weekday: 'long' });
-            
-            // Log for debugging
-            console.log("Searching for day:", selectedDayName);
+            const targetDayLabel = dateObj.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+            // Remove the period from the month if it exists (e.g. "Apr." -> "Apr")
+            const cleanTarget = targetDayLabel.replace('.', '');
 
-            // Updated selector to find the movie containers
-            const movieItems = doc.querySelectorAll('.movie-list__item, .film-list__item');
             let pool = [];
 
-            movieItems.forEach(movie => {
-                const title = movie.querySelector('h3, .film-list__title, .movie-list__title')?.innerText.trim();
+            // 2. Find all film containers
+            const films = doc.querySelectorAll('.cinema-listings__item');
+
+            films.forEach(film => {
+                const title = film.querySelector('.cinema-listings__film-title')?.innerText.trim();
                 
-                // Find all showtime sections within this movie
-                const sections = movie.querySelectorAll('.showtimes__day, .film-list__showtimes-day');
+                // 3. Find the specific "Day" block inside this film's listing
+                const dayBlocks = film.querySelectorAll('.cinema-listings__day');
                 
-                sections.forEach(section => {
-                    const dayLabel = section.innerText.trim();
+                dayBlocks.forEach(block => {
+                    const blockDate = block.querySelector('.cinema-listings__day-name')?.innerText.trim();
                     
-                    // Check if this section belongs to the day the user picked
-                    if (dayLabel.toLowerCase().includes(selectedDayName.toLowerCase())) {
+                    // If this block matches our selected date (e.g. "Tue 14 Apr")
+                    if (blockDate && blockDate.includes(cleanTarget)) {
                         let times = [];
-                        // Find the individual time buttons/links
-                        const timeElements = section.querySelectorAll('.showtimes__time, .film-list__session-time, a[data-time]');
+                        const timeLinks = block.querySelectorAll('.cinema-listings__showtime');
                         
-                        timeElements.forEach(t => {
-                            const val = t.innerText.trim().match(/\d{2}:\d{2}/)?.[0]; // Extract HH:mm
-                            if (val && val >= startTime && val <= endTime) {
-                                times.push(val);
+                        timeLinks.forEach(t => {
+                            const timeText = t.innerText.trim(); // e.g. "19:30"
+                            if (timeText >= startTime && timeText <= endTime) {
+                                times.push(timeText);
                             }
                         });
 
@@ -103,13 +100,14 @@
                 });
             });
 
+            // 4. Display Results
             if (pool.length === 0) {
-                res.innerHTML = "No movies found. Try a wider time range or check if the date is correct.";
+                res.innerHTML = `No movies found for ${cleanTarget} between ${startTime} and ${endTime}.`;
             } else {
                 const choice = pool[Math.floor(Math.random() * pool.length)];
                 res.innerHTML = `
                     <div class="movie-card">
-                        <small style="color:#aaa">RANDOM SELECTION:</small>
+                        <small style="color:#aaa">RANDOM SELECTION FOR ${cleanTarget}:</small>
                         <div style="font-size:1.2rem; font-weight:bold; margin: 5px 0;">${choice.title}</div>
                         <div>${choice.times.map(t => `<span class="time-tag">${t}</span>`).join('')}</div>
                     </div>
@@ -117,7 +115,7 @@
             }
 
         } catch (err) {
-            res.innerHTML = "Error fetching data. The proxy might be down or the site layout changed.";
+            res.innerHTML = "Connection error. Please try again in a moment.";
             console.error(err);
         }
     }
