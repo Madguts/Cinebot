@@ -41,7 +41,6 @@
 </div>
 
 <script>
-    // Set default date to today
     document.getElementById('datePicker').valueAsDate = new Date();
 
     async function fetchMovies() {
@@ -53,7 +52,7 @@
         res.innerHTML = "Checking listings...";
 
         try {
-            // Updated Proxy to avoid the Content-Length error
+            // Using a more reliable target URL for the Lisburn cinema
             const targetUrl = 'https://www.omniplexcinemas.co.uk/cinema/lisburn';
             const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
             
@@ -64,25 +63,37 @@
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             
-            // Format selected day to match Omniplex (e.g. "Friday")
-            const selectedDay = new Date(dateVal).toLocaleDateString('en-GB', { weekday: 'long' });
+            // Omniplex often uses "Friday 14th April" style or just "Friday"
+            const dateObj = new Date(dateVal);
+            const selectedDayName = dateObj.toLocaleDateString('en-GB', { weekday: 'long' });
             
-            const movies = doc.querySelectorAll('.film-list__item');
+            // Log for debugging
+            console.log("Searching for day:", selectedDayName);
+
+            // Updated selector to find the movie containers
+            const movieItems = doc.querySelectorAll('.movie-list__item, .film-list__item');
             let pool = [];
 
-            movies.forEach(m => {
-                const title = m.querySelector('.film-list__title')?.innerText.trim();
+            movieItems.forEach(movie => {
+                const title = movie.querySelector('h3, .film-list__title, .movie-list__title')?.innerText.trim();
                 
-                // Find the section for our specific day
-                const daySections = m.querySelectorAll('.film-list__showtimes-day');
-                daySections.forEach(section => {
-                    const dayName = section.querySelector('.film-list__day-name')?.innerText.trim() || "";
+                // Find all showtime sections within this movie
+                const sections = movie.querySelectorAll('.showtimes__day, .film-list__showtimes-day');
+                
+                sections.forEach(section => {
+                    const dayLabel = section.innerText.trim();
                     
-                    if (dayName.toLowerCase().includes(selectedDay.toLowerCase())) {
+                    // Check if this section belongs to the day the user picked
+                    if (dayLabel.toLowerCase().includes(selectedDayName.toLowerCase())) {
                         let times = [];
-                        section.querySelectorAll('.film-list__session-time').forEach(t => {
-                            const val = t.innerText.trim();
-                            if (val >= startTime && val <= endTime) times.push(val);
+                        // Find the individual time buttons/links
+                        const timeElements = section.querySelectorAll('.showtimes__time, .film-list__session-time, a[data-time]');
+                        
+                        timeElements.forEach(t => {
+                            const val = t.innerText.trim().match(/\d{2}:\d{2}/)?.[0]; // Extract HH:mm
+                            if (val && val >= startTime && val <= endTime) {
+                                times.push(val);
+                            }
                         });
 
                         if (times.length > 0) {
@@ -93,7 +104,7 @@
             });
 
             if (pool.length === 0) {
-                res.innerHTML = "No movies found for that time/date.";
+                res.innerHTML = "No movies found. Try a wider time range or check if the date is correct.";
             } else {
                 const choice = pool[Math.floor(Math.random() * pool.length)];
                 res.innerHTML = `
@@ -106,7 +117,7 @@
             }
 
         } catch (err) {
-            res.innerHTML = "Error fetching data. Omniplex might be blocking the request.";
+            res.innerHTML = "Error fetching data. The proxy might be down or the site layout changed.";
             console.error(err);
         }
     }
